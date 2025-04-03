@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-简化版短视频解析客户端
+简化版短视频解析客户端 - HTTP服务版
 只使用52api.cn作为API提供商
 支持抖音、快手、小红书等短视频平台的视频解析和去水印功能
 """
@@ -19,7 +19,7 @@ import httpx
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from dotenv import load_dotenv
-
+from flask import Flask, request, jsonify
 
 # 加载环境变量
 load_dotenv()
@@ -121,7 +121,7 @@ class VideoApiClient:
         # 初始化HTTP客户端
         self.client = httpx.Client(
             timeout=timeout,
-            follow_redirects=True,\
+            follow_redirects=True,
             verify=False  # 禁用SSL证书验证
         )
         
@@ -365,34 +365,98 @@ class VideoApiClient:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
+# 创建Flask应用
+app = Flask(__name__)
+
+# 创建全局客户端实例
+client = VideoApiClient(debug=os.getenv("DEBUG") == "true")
+
+@app.route('/')
+def home():
+    """API首页，显示基本使用信息"""
+    return jsonify({
+        "status": "ok",
+        "message": "视频解析API服务正在运行",
+        "usage": {
+            "解析视频": "/api/parse?url=视频链接&platform=平台(可选)",
+            "获取无水印链接": "/api/no_watermark?url=视频链接&platform=平台(可选)",
+            "获取支持的平台": "/api/platforms"
+        },
+        "version": "1.0"
+    })
+
+@app.route('/api/parse')
+def parse_video():
+    """解析视频API接口"""
+    url = request.args.get('url')
+    platform = request.args.get('platform')
+    
+    if not url:
+        return jsonify({"error": "缺少url参数"}), 400
+    
+    result = client.get_video_by_url(url) if not platform else client.parse_video(url, platform)
+    
+    if result:
+        return jsonify({"status": "ok", "data": result})
+    else:
+        return jsonify({"status": "error", "message": "无法解析视频"}), 404
+
+@app.route('/api/no_watermark')
+def get_no_watermark():
+    """获取无水印视频链接API接口"""
+    url = request.args.get('url')
+    
+    if not url:
+        return jsonify({"error": "缺少url参数"}), 400
+    
+    video_url = client.get_no_watermark_url(url)
+    
+    if video_url:
+        return jsonify({
+            "status": "ok", 
+            "data": {
+                "url": video_url
+            }
+        })
+    else:
+        return jsonify({"status": "error", "message": "无法获取无水印视频链接"}), 404
+
+@app.route('/api/platforms')
+def get_platforms():
+    """获取支持的平台列表"""
+    return jsonify({
+        "status": "ok",
+        "data": {
+            "platforms": client.PLATFORM_MAPPING
+        }
+    })
+
+@app.errorhandler(404)
+def page_not_found(e):
+    """处理404错误"""
+    return jsonify({
+        "status": "error",
+        "message": "接口不存在"
+    }), 404
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    """处理500错误"""
+    return jsonify({
+        "status": "error",
+        "message": "服务器内部错误"
+    }), 500
 
 if __name__ == "__main__":
-    # 测试代码
-    client = VideoApiClient(debug=True)
+    # 获取端口号，默认为8000
+    port = int(os.getenv("PORT", 8000))
     
-    # 测试URL列表
-    test_urls = [
-        "https://www.douyin.com/video/7448118827402972455",  # 抖音
-        "https://v.douyin.com/i1tTcWF/",  # 抖音短链接
-        "https://www.kuaishou.com/short-video/3xiqtsmk77su9vq",  # 快手
-        "https://www.xiaohongshu.com/explore/64e08a7e000000001e026f0e"  # 小红书
-    ]
+    # 获取绑定地址，默认绑定所有接口
+    host = os.getenv("HOST", "0.0.0.0")
     
-    try:
-        for url in test_urls:
-            print(f"\n===== 测试 {url} =====")
-            
-            # 检测平台
-            platform = client.detect_platform(url)
-            print(f"检测到平台: {platform}")
-            
-            # 获取视频信息
-            result = client.get_video_by_url(url)
-            if result:
-                print(f"标题: {result.get('title', '')[:50]}...")
-                print(f"作者: {result.get('author', {}).get('name', '')}")
-                print(f"无水印视频URL: {result.get('video_url', '')[:60]}...")
-            else:
-                print("无法解析视频")
-    finally:
-        client.close() 
+    # 是否开启调试模式
+    debug = os.getenv("DEBUG") == "true"
+    
+    # 启动Flask服务
+    app.logger.info(f"启动视频解析API服务，监听 {host}:{port}")
+    app.run(host=host, port=port, debug=debug) 
