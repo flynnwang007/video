@@ -15,6 +15,9 @@ from typing import Dict, Optional, List, Any, Union
 from urllib.parse import urlparse, parse_qs
 
 import httpx
+# 禁用不安全请求的警告
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from dotenv import load_dotenv
 
 
@@ -118,7 +121,8 @@ class VideoApiClient:
         # 初始化HTTP客户端
         self.client = httpx.Client(
             timeout=timeout,
-            follow_redirects=True
+            follow_redirects=True,\
+            verify=False  # 禁用SSL证书验证
         )
         
         # 添加通用请求头
