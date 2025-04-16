@@ -35,36 +35,35 @@ if [ -f "/etc/nginx/sites-enabled/default" ]; then
   echo "默认网站配置已禁用"
 fi
 
-# 3. 重新创建配置文件
-echo "重新创建Nginx配置文件..."
-sudo tee /etc/nginx/sites-available/api.aibase123.cn > /dev/null << 'EOF'
+# 检查SSL证书是否存在
+echo "检查SSL证书..."
+if [ -d "/etc/letsencrypt/live/api.aibase123.com" ]; then
+  echo "找到api.aibase123.com的SSL证书"
+  
+  # 3. 创建配置文件
+  echo "创建Nginx配置文件..."
+  sudo tee /etc/nginx/sites-available/api.aibase123.com > /dev/null << EOF
 server {
     listen 80 default_server;
     listen 443 ssl default_server;
-    server_name api.aibase123.cn;
+    server_name api.aibase123.com;
 
-    ssl_certificate /etc/letsencrypt/live/api.aibase123.cn/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api.aibase123.cn/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/api.aibase123.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.aibase123.com/privkey.pem;
 
     # 增强SSL安全配置
     ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers off;
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 1d;
     ssl_session_tickets off;
 
-    # OCSP Stapling
-    ssl_stapling on;
-    ssl_stapling_verify on;
-    resolver 8.8.8.8 8.8.4.4 valid=300s;
-    resolver_timeout 5s;
-
     # 隐私政策页面 - 当访问根路径时显示
     location = / {
         root /usr/share/nginx/html;
         index index.html;
-        try_files $uri $uri/ =404;
+        try_files \$uri \$uri/ =404;
     }
 
     # favicon.ico
@@ -82,31 +81,38 @@ server {
     # API 路径 - 代理到后端服务
     location /api/ {
         proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
 EOF
 
-# 4. 确保配置文件存在于sites-enabled目录
-echo "创建符号链接..."
-sudo ln -sf /etc/nginx/sites-available/api.aibase123.cn /etc/nginx/sites-enabled/
-
-# 确保默认配置不存在
-sudo rm -f /etc/nginx/sites-enabled/default
-# 移除可能存在的其他配置
-sudo rm -f /etc/nginx/sites-enabled/api.aibase123.com
-
-# 5. 检查配置文件语法
-echo "检查Nginx配置语法..."
-if sudo nginx -t; then
-  echo "Nginx配置语法正确，重启Nginx..."
-  sudo systemctl restart nginx
-  echo "Nginx已重启"
+  # 4. 启用配置
+  echo "创建符号链接..."
+  sudo ln -sf /etc/nginx/sites-available/api.aibase123.com /etc/nginx/sites-enabled/
+  
+  # 移除其他配置
+  sudo rm -f /etc/nginx/sites-enabled/default 2>/dev/null
+  sudo rm -f /etc/nginx/sites-enabled/api.aibase123.cn 2>/dev/null
+  
+  # 5. 检查配置文件语法
+  echo "检查Nginx配置语法..."
+  if sudo nginx -t; then
+    echo "Nginx配置语法正确，重启Nginx..."
+    sudo systemctl restart nginx
+    echo "Nginx已重启"
+  else
+    echo "Nginx配置语法错误，请手动修复"
+    exit 1
+  fi
+  
 else
-  echo "Nginx配置语法错误，请手动修复"
+  echo "错误: 找不到api.aibase123.com的SSL证书"
+  echo "请确认您已为api.aibase123.com域名申请了Let's Encrypt证书"
+  echo "如果您尚未申请证书，请运行以下命令申请:"
+  echo "sudo certbot --nginx -d api.aibase123.com"
   exit 1
 fi
 
@@ -129,6 +135,6 @@ else
 fi
 
 echo "===== 修复完成 ====="
-echo "请尝试访问 https://api.aibase123.cn 验证隐私政策页面"
-echo "如果仍然看到Nginx默认页面，请检查Nginx日志:"
+echo "请尝试访问 https://api.aibase123.com 验证隐私政策页面"
+echo "如果仍然有问题，请检查Nginx日志:"
 echo "sudo tail -n 50 /var/log/nginx/error.log" 
